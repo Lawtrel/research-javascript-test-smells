@@ -2,7 +2,7 @@
  * API client for communicating with the FastAPI backend.
  */
 
-const API_BASE_URL = '/api';
+const API_BASE_URL = 'https://smell-backend-api-e0fmamardsgbbxb9.canadacentral-01.azurewebsites.net/';
 
 /**
  * Fetch wrapper with error handling
