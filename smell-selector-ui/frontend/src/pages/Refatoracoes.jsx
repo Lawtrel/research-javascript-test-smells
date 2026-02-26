@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRefatoracoes } from '../hooks/useRefatoracoes';
 import { DiffViewer } from '../components/DiffViewer/DiffViewer';
 import { RefatoracaoCard } from '../components/RefatoracaoCard/RefatoracaoCard';
 import { Pagination } from '../components/Pagination/Pagination';
+import { ConfirmModal } from '../components/ConfirmModal/ConfirmModal';
+import { deleteExperiment } from '../api/client';
 import './Refatoracoes.css';
 
 // ─── helpers ─────────────────────────────────────────────────────────────────
@@ -31,54 +33,91 @@ function CoverageRow({ label, before, after }) {
 }
 
 function TestResultsTable({ before, after }) {
-  if (!before && !after) return null;
+  // Always show table section (even with partial data)
+  // Individual cells handle null values with "—"
   return (
     <div className="ref-section">
       <h4 className="ref-section-title">Test Results</h4>
-      <table className="ref-table">
-        <thead>
-          <tr>
-            <th>Metric</th>
-            <th>Before</th>
-            <th>After</th>
-            <th>Delta</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <td>Tests passing</td>
-            <td>{before ? `${before.tests_passed ?? '—'}/${before.tests_total ?? '—'}` : '—'}</td>
-            <td>{after ? `${after.tests_passed ?? '—'}/${after.tests_total ?? '—'}` : '—'}</td>
-            <td>—</td>
-          </tr>
-          <tr>
-            <td>Test suites passing</td>
-            <td>{before ? `${before.test_suites_passed ?? '—'}/${before.test_suites_total ?? '—'}` : '—'}</td>
-            <td>{after ? `${after.test_suites_passed ?? '—'}/${after.test_suites_total ?? '—'}` : '—'}</td>
-            <td>—</td>
-          </tr>
-          <CoverageRow
-            label="Coverage statements"
-            before={before?.coverage_statements}
-            after={after?.coverage_statements}
-          />
-          <CoverageRow
-            label="Coverage branches"
-            before={before?.coverage_branches}
-            after={after?.coverage_branches}
-          />
-          <CoverageRow
-            label="Coverage functions"
-            before={before?.coverage_functions}
-            after={after?.coverage_functions}
-          />
-          <CoverageRow
-            label="Coverage lines"
-            before={before?.coverage_lines}
-            after={after?.coverage_lines}
-          />
-        </tbody>
-      </table>
+      {!before && !after ? (
+        <p className="ref-no-data">No test results data available</p>
+      ) : (
+        <table className="ref-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Before</th>
+              <th>After</th>
+              <th>Delta</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Tests passing</td>
+              <td>
+                {before ? (
+                  <>
+                    {before.tests_passed ?? '—'}/{before.tests_total ?? '—'}
+                    {before.tests_passed != null && before.tests_total != null && before.tests_total > 0 ? 
+                      ` (${((before.tests_passed / before.tests_total) * 100).toFixed(1)}%)` : ''}
+                  </>
+                ) : '—'}
+              </td>
+              <td>
+                {after ? (
+                  <>
+                    {after.tests_passed ?? '—'}/{after.tests_total ?? '—'}
+                    {after.tests_passed != null && after.tests_total != null && after.tests_total > 0 ? 
+                      ` (${((after.tests_passed / after.tests_total) * 100).toFixed(1)}%)` : ''}
+                  </>
+                ) : '—'}
+              </td>
+              <td>—</td>
+            </tr>
+            <tr>
+              <td>Test suites passing</td>
+              <td>
+                {before ? (
+                  <>
+                    {before.test_suites_passed ?? '—'}/{before.test_suites_total ?? '—'}
+                    {before.test_suites_passed != null && before.test_suites_total != null && before.test_suites_total > 0 ? 
+                      ` (${((before.test_suites_passed / before.test_suites_total) * 100).toFixed(1)}%)` : ''}
+                  </>
+                ) : '—'}
+              </td>
+              <td>
+                {after ? (
+                  <>
+                    {after.test_suites_passed ?? '—'}/{after.test_suites_total ?? '—'}
+                    {after.test_suites_passed != null && after.test_suites_total != null && after.test_suites_total > 0 ? 
+                      ` (${((after.test_suites_passed / after.test_suites_total) * 100).toFixed(1)}%)` : ''}
+                  </>
+                ) : '—'}
+              </td>
+              <td>—</td>
+            </tr>
+            <CoverageRow
+              label="Coverage statements"
+              before={before?.coverage_statements}
+              after={after?.coverage_statements}
+            />
+            <CoverageRow
+              label="Coverage branches"
+              before={before?.coverage_branches}
+              after={after?.coverage_branches}
+            />
+            <CoverageRow
+              label="Coverage functions"
+              before={before?.coverage_functions}
+              after={after?.coverage_functions}
+            />
+            <CoverageRow
+              label="Coverage lines"
+              before={before?.coverage_lines}
+              after={after?.coverage_lines}
+            />
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -102,18 +141,19 @@ function RefFilter({ filters, filterOptions, onFilterChange, onClear, total }) {
         </select>
 
         <select
-          value={filters.ai_model}
+          value={filters.ai_model_version}
           onChange={e => {
-            const selected = filterOptions.ai_models.find(m => m.ai_tool === e.target.value);
+            const selectedVersion = e.target.value;
+            const selected = filterOptions.ai_models.find(m => m.ai_model_version === selectedVersion);
             onFilterChange({
-              ai_model: e.target.value,
-              ai_model_version: selected?.ai_model_version || '',
+              ai_model: selected?.ai_tool || '',
+              ai_model_version: selectedVersion,
             });
           }}
         >
           <option value="">All LLM models</option>
           {filterOptions.ai_models.map((m, i) => (
-            <option key={i} value={m.ai_tool}>{m.label} ({m.count})</option>
+            <option key={i} value={m.ai_model_version}>{m.label} ({m.count})</option>
           ))}
         </select>
 
@@ -147,21 +187,30 @@ function RefFilter({ filters, filterOptions, onFilterChange, onClear, total }) {
         </select>
 
         <select
-          value={filters.tests_changed}
-          onChange={e => onFilterChange({ tests_changed: e.target.value })}
-        >
-          <option value="">Tests changed: All</option>
-          <option value="true">Tests changed: Yes</option>
-          <option value="false">Tests changed: No</option>
-        </select>
-
-        <select
           value={filters.coverage_changed}
           onChange={e => onFilterChange({ coverage_changed: e.target.value })}
         >
           <option value="">Coverage changed: All</option>
           <option value="true">Coverage changed: Yes</option>
           <option value="false">Coverage changed: No</option>
+        </select>
+
+        <select
+          value={filters.coverage_decreased}
+          onChange={e => onFilterChange({ coverage_decreased: e.target.value })}
+        >
+          <option value="">Coverage decreased: All</option>
+          <option value="true">Coverage decreased: Yes</option>
+          <option value="false">Coverage decreased: No</option>
+        </select>
+
+        <select
+          value={filters.tests_pass_rate_decreased}
+          onChange={e => onFilterChange({ tests_pass_rate_decreased: e.target.value })}
+        >
+          <option value="">Test pass rate decreased: All</option>
+          <option value="true">Test pass rate decreased: Yes</option>
+          <option value="false">Test pass rate decreased: No</option>
         </select>
 
         <button className="ref-btn-clear" onClick={onClear}>Clear filters</button>
@@ -194,7 +243,7 @@ function PromptSection({ promptText }) {
 
 // ─── experiment detail ────────────────────────────────────────────────────────
 
-function ExperimentDetail({ experiment, layout, onLayoutChange }) {
+function ExperimentDetail({ experiment, layout, onLayoutChange, onDelete }) {
   if (!experiment) {
     return (
       <div className="ref-detail-placeholder">
@@ -217,11 +266,26 @@ function ExperimentDetail({ experiment, layout, onLayoutChange }) {
         <div className="ref-detail-title">
           <span className="ref-detail-id">Experiment #{experiment.id}</span>
           <span className="ref-detail-smell">{experiment.smell_type || '—'}</span>
+          <span style={{
+            fontSize: '13px',
+            color: '#6b7280',
+            fontWeight: 'normal',
+            marginLeft: '12px'
+          }}>
+            ← → Navigate
+          </span>
         </div>
         <div className="ref-detail-file">
           <span className="ref-detail-repo">{experiment.repository}</span>
           <span className="ref-detail-path">{experiment.file_path}</span>
         </div>
+        <button 
+          className="ref-btn-delete" 
+          onClick={() => onDelete(experiment)}
+          title="Delete experiment"
+        >
+          🗑️ Delete
+        </button>
       </div>
 
       <DiffViewer
@@ -249,8 +313,12 @@ function ExperimentDetail({ experiment, layout, onLayoutChange }) {
             <span className="ref-info-value">{experiment.experiment_date ? experiment.experiment_date.slice(0, 16).replace('T', ' ') : '—'}</span>
           </div>
           <div className="ref-info-item">
-            <span className="ref-info-label">Time (s)</span>
+            <span className="ref-info-label">Total Time (s)</span>
             <span className="ref-info-value">{experiment.execution_time_seconds != null ? experiment.execution_time_seconds.toFixed(2) : '—'}</span>
+          </div>
+          <div className="ref-info-item">
+            <span className="ref-info-label">LLM Latency (s)</span>
+            <span className="ref-info-value">{experiment.llm_latency_seconds != null ? experiment.llm_latency_seconds.toFixed(2) : '—'}</span>
           </div>
           <div className="ref-info-item">
             <span className="ref-info-label">Tokens</span>
@@ -276,12 +344,16 @@ function ExperimentDetail({ experiment, layout, onLayoutChange }) {
             <Badge value={experiment.tests_still_passing} />
           </div>
           <div className="ref-outcome-item">
-            <span className="ref-outcome-label">Tests changed</span>
-            <Badge value={experiment.tests_changed} />
-          </div>
-          <div className="ref-outcome-item">
             <span className="ref-outcome-label">Coverage changed</span>
             <Badge value={experiment.coverage_changed} />
+          </div>
+          <div className="ref-outcome-item">
+            <span className="ref-outcome-label">Coverage decreased</span>
+            <Badge value={experiment.coverage_decreased} trueLabel="Yes" falseLabel="No" />
+          </div>
+          <div className="ref-outcome-item">
+            <span className="ref-outcome-label">Test pass rate decreased</span>
+            <Badge value={experiment.tests_pass_rate_decreased} trueLabel="Yes" falseLabel="No" />
           </div>
         </div>
 
@@ -322,13 +394,96 @@ function Refatoracoes() {
     updateFilters,
     clearFilters,
     setPage,
+    refreshExperiments,
   } = useRefatoracoes();
 
   const [selectedId, setSelectedId] = useState(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [experimentToDelete, setExperimentToDelete] = useState(null);
+  const [deleteError, setDeleteError] = useState(null);
 
   const handleCardClick = async (exp) => {
     setSelectedId(exp.id);
     await loadExperimentDetail(exp.id);
+  };
+
+  // Keyboard navigation: Arrow left/right to navigate between experiments
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (!selectedId ||
+          e.target.tagName === 'INPUT' ||
+          e.target.tagName === 'TEXTAREA' ||
+          e.target.tagName === 'SELECT') {
+        return;
+      }
+
+      const currentIndex = experiments.findIndex(exp => exp.id === selectedId);
+      if (currentIndex === -1) return;
+
+      if (e.key === 'ArrowRight') {
+        e.preventDefault();
+        if (currentIndex < experiments.length - 1) {
+          const nextExperiment = experiments[currentIndex + 1];
+          handleCardClick(nextExperiment);
+        } else if (page < totalPages) {
+          setPage(page + 1);
+        }
+      } else if (e.key === 'ArrowLeft') {
+        e.preventDefault();
+        if (currentIndex > 0) {
+          const prevExperiment = experiments[currentIndex - 1];
+          handleCardClick(prevExperiment);
+        } else if (page > 1) {
+          setPage(page - 1);
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [selectedId, experiments, page, totalPages]);
+
+  // Auto-select first experiment when page changes
+  useEffect(() => {
+    if (experiments.length > 0 && selectedId) {
+      const isInCurrentPage = experiments.some(exp => exp.id === selectedId);
+      if (!isInCurrentPage) {
+        handleCardClick(experiments[0]);
+      }
+    }
+  }, [experiments]);
+
+  const handleDeleteClick = (experiment) => {
+    setExperimentToDelete(experiment);
+    setIsModalOpen(true);
+    setDeleteError(null);
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!experimentToDelete) return;
+
+    try {
+      await deleteExperiment(experimentToDelete.id);
+      setIsModalOpen(false);
+      setExperimentToDelete(null);
+      setSelectedId(null);
+      // Refresh the list after deletion
+      if (refreshExperiments) {
+        await refreshExperiments();
+      } else {
+        // Fallback: reload the page
+        window.location.reload();
+      }
+    } catch (err) {
+      setDeleteError(err.message || 'Failed to delete experiment');
+      console.error('Delete error:', err);
+    }
+  };
+
+  const handleCancelDelete = () => {
+    setIsModalOpen(false);
+    setExperimentToDelete(null);
+    setDeleteError(null);
   };
 
   const start = Math.min((page - 1) * pageSize + 1, total);
@@ -389,12 +544,34 @@ function Refatoracoes() {
                   experiment={selectedExperiment}
                   layout={layout}
                   onLayoutChange={setLayout}
+                  onDelete={handleDeleteClick}
                 />
               )}
             </div>
           </>
         )}
       </div>
+
+      <ConfirmModal
+        isOpen={isModalOpen}
+        title="Delete Experiment"
+        message={
+          experimentToDelete
+            ? `Are you sure you want to delete experiment #${experimentToDelete.id} (${experimentToDelete.smell_type} in ${experimentToDelete.repository})? This action cannot be undone.`
+            : ''
+        }
+        onConfirm={handleConfirmDelete}
+        onCancel={handleCancelDelete}
+        confirmText="Delete"
+        cancelText="Cancel"
+        danger={true}
+      />
+
+      {deleteError && (
+        <div className="ref-error" style={{ position: 'fixed', bottom: '20px', right: '20px', padding: '10px', background: '#f44336', color: 'white', borderRadius: '4px' }}>
+          {deleteError}
+        </div>
+      )}
     </>
   );
 }

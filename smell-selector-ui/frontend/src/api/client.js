@@ -129,11 +129,11 @@ export async function getRefatoracoes(params = {}) {
   if (params.smell_removed !== undefined && params.smell_removed !== '') {
     query.append('smell_removed', params.smell_removed);
   }
-  if (params.tests_changed !== undefined && params.tests_changed !== '') {
-    query.append('tests_changed', params.tests_changed);
-  }
   if (params.coverage_changed !== undefined && params.coverage_changed !== '') {
     query.append('coverage_changed', params.coverage_changed);
+  }
+  if (params.coverage_decreased !== undefined && params.coverage_decreased !== '') {
+    query.append('coverage_decreased', params.coverage_decreased);
   }
   if (params.limit) query.append('limit', params.limit);
   if (params.offset !== undefined) query.append('offset', params.offset);
@@ -143,4 +143,89 @@ export async function getRefatoracoes(params = {}) {
 
 export async function getRefatoracaoDetail(experimentId) {
   return fetchAPI(`/refatoracoes/${experimentId}`);
+}
+
+export async function deleteExperiment(experimentId) {
+  return fetchAPI(`/refatoracoes/${experimentId}`, {
+    method: 'DELETE',
+  });
+}
+
+// =============================================================================
+// ANALYTICS
+// =============================================================================
+
+/**
+ * Build analytics query parameters from filters
+ */
+function buildAnalyticsParams(filters = {}) {
+  const params = new URLSearchParams();
+
+  if (filters.startDate) params.append('start_date', filters.startDate);
+  if (filters.endDate) params.append('end_date', filters.endDate);
+  
+  if (filters.selectedModels && filters.selectedModels.length > 0) {
+    params.append('model_ids', filters.selectedModels.join(','));
+  }
+  
+  if (filters.selectedSmellTypes && filters.selectedSmellTypes.length > 0) {
+    params.append('smell_types', filters.selectedSmellTypes.join(','));
+  }
+  
+  if (filters.selectedPromptingApproaches && filters.selectedPromptingApproaches.length > 0) {
+    params.append('prompting_approaches', filters.selectedPromptingApproaches.join(','));
+  }
+  
+  if (filters.selectedRepositories && filters.selectedRepositories.length > 0) {
+    params.append('repos', filters.selectedRepositories.join(','));
+  }
+
+  // Tri-state filters
+  if (filters.smellRemoved && filters.smellRemoved !== 'both') {
+    params.append('smell_removed', filters.smellRemoved === 'yes');
+  }
+  
+  if (filters.testsPassing && filters.testsPassing !== 'both') {
+    params.append('tests_passing', filters.testsPassing === 'yes');
+  }
+  
+  if (filters.testPassRateDecreased && filters.testPassRateDecreased !== 'both') {
+    params.append('test_pass_rate_decreased', filters.testPassRateDecreased === 'yes');
+  }
+  
+  if (filters.coverageDecreased && filters.coverageDecreased !== 'both') {
+    params.append('coverage_decreased', filters.coverageDecreased === 'yes');
+  }
+
+  return params.toString();
+}
+
+export async function fetchAnalyticsOverview(filters = {}) {
+  const params = buildAnalyticsParams(filters);
+  return fetchAPI(`/analytics/overview${params ? '?' + params : ''}`);
+}
+
+export async function fetchAnalyticsModels(filters = {}) {
+  const params = buildAnalyticsParams(filters);
+  return fetchAPI(`/analytics/models${params ? '?' + params : ''}`);
+}
+
+export async function fetchAnalyticsSmells(filters = {}) {
+  const params = buildAnalyticsParams(filters);
+  return fetchAPI(`/analytics/smells${params ? '?' + params : ''}`);
+}
+
+export async function fetchAnalyticsTests(filters = {}) {
+  const params = buildAnalyticsParams(filters);
+  return fetchAPI(`/analytics/tests${params ? '?' + params : ''}`);
+}
+
+export async function fetchAnalyticsTimeline(filters = {}) {
+  const params = buildAnalyticsParams(filters);
+  return fetchAPI(`/analytics/timeline${params ? '?' + params : ''}`);
+}
+
+export async function fetchAnalyticsRegressions(filters = {}) {
+  const params = buildAnalyticsParams(filters);
+  return fetchAPI(`/analytics/regressions${params ? '?' + params : ''}`);
 }

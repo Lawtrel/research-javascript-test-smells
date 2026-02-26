@@ -201,24 +201,18 @@ NOTE:
     def _get_refactor_config(self, strategy_id: int, model_id: int) -> Dict[str, Any]:
         """Get and validate refactoring configuration."""
         strategy = PromptStrategy.get_strategy(strategy_id)
-        model = HuggingFaceModels.get_model_by_id(model_id)
+        model_info = HuggingFaceModels.get_model_by_id(model_id)
         
-        if not strategy or not model:
+        if not strategy or not model_info:
             return "❌ Error: Invalid strategy or model ID"
-        
-        model_name = next(
-            (m['name'] for m in HuggingFaceModels.MODELS if m['id'] == model_id),
-            "Unknown"
-        )
-        strategy_name = PromptStrategy.STRATEGIES[strategy_id][1]
         
         return {
             'strategy': strategy,
-            'model': model,
+            'model': model_info['model_id'],
             'strategy_id': strategy_id,
             'model_id': model_id,
-            'strategy_name': strategy_name,
-            'model_name': model_name
+            'strategy_name': PromptStrategy.STRATEGIES[strategy_id][1],
+            'model_name': model_info['name']
         }
     
     def _fetch_smell_data(self, smell_id: int) -> Dict[str, Any]:
@@ -248,6 +242,7 @@ NOTE:
                 'file_path': smell.file.path if smell.file else None,
                 'repo_name': smell.file.repository.name if smell.file and smell.file.repository else None,
                 'smell_description': smell_catalog.get('definition', ''),
+                'smell_detection': smell_catalog.get('detection', ''),
                 'examples': smell_catalog.get('examples', []),
                 'refactoring_strategies': smell_catalog.get('refactoring_strategies', [])
             }
@@ -302,15 +297,19 @@ NOTE:
         """Get refactored code from LLM."""
         client = HuggingFaceRefactorClient()
         
-        return client.refactor(
+        result = client.refactor(
             smell_name=smell_data['smell_type'],
             smell_description=smell_data['smell_description'],
+            smell_detection=smell_data.get('smell_detection', ''),
             test_code=smell_data['code_snippet'],
             prompt_strategy=config['strategy'],
             model=config['model'],
             examples=smell_data['examples'],
             refactoring_strategies=smell_data['refactoring_strategies'],
         )
+        
+        # Extract just the code from the result dict
+        return result['code']
     
     def _format_result(self, smell_data: Dict[str, Any], refactored_code: str,
                       config: Dict[str, Any], apply_changes: bool) -> str:

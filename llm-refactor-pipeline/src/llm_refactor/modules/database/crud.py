@@ -409,6 +409,135 @@ def get_successful_experiments(session: Session) -> List[Experiment]:
     return session.query(Experiment).filter_by(smell_removed=True).all()
 
 
+def get_experiment_with_relations(session: Session, experiment_id: int) -> Optional[Experiment]:
+    """
+    Get an experiment by ID with all relationships loaded.
+    
+    This loads: study_smell, baseline_smell, file, file.repository
+    Useful for execution phase which needs complete experiment context.
+    
+    Args:
+        session: Database session
+        experiment_id: Experiment ID
+    
+    Returns:
+        Experiment with relationships or None if not found
+    """
+    from sqlalchemy.orm import joinedload
+    
+    return session.query(Experiment)\
+        .filter_by(id=experiment_id)\
+        .options(
+            joinedload(Experiment.study_smell),
+            joinedload(Experiment.baseline_smell),
+            joinedload(Experiment.file).joinedload(File.repository)
+        )\
+        .first()
+
+
+def find_experiment_by_smell_strategy_model(
+    session: Session,
+    study_smell_id: int,
+    prompting_approach: str,
+    ai_model_version: str
+) -> Optional[Experiment]:
+    """
+    Find existing experiment by smell ID, strategy, and model.
+    
+    Used to check if experiment already exists before creating new one.
+    
+    Args:
+        session: Database session
+        study_smell_id: Study smell ID
+        prompting_approach: Strategy name (e.g., "Chain-of-Thought")
+        ai_model_version: Model name (e.g., "Qwen 2.5 Coder 32B")
+    
+    Returns:
+        Experiment or None if not found
+    """
+    return session.query(Experiment)\
+        .filter_by(
+            study_smell_id=study_smell_id,
+            prompting_approach=prompting_approach
+        )\
+        .filter(Experiment.ai_model_version.like(f"%{ai_model_version[:20]}%"))\
+        .first()
+
+
+def get_refactored_pending_execution(
+    session: Session,
+    strategy: Optional[str] = None,
+    model: Optional[str] = None
+) -> List[Experiment]:
+    """
+    Get experiments with refactoring completed but execution pending.
+    
+    These are experiments stuck in Phase 1 (refactored but not tested).
+    Useful for resuming interrupted batch processing.
+    
+    Args:
+        session: Database session
+        strategy: Filter by prompting approach (optional)
+        model: Filter by AI model version (optional)
+    
+    Returns:
+        List of experiments ready for execution phase
+    """
+    query = session.query(Experiment)\
+        .filter_by(
+            refactor_phase_completed=True,
+            execution_phase_completed=False
+        )
+    
+    if strategy:
+        query = query.filter_by(prompting_approach=strategy)
+    
+    if model:
+        query = query.filter(Experiment.ai_model_version.like(f"%{model[:20]}%"))
+    
+    return query.all()
+
+
+def get_failed_experiments(
+    session: Session,
+    strategy: Optional[str] = None,
+    model: Optional[str] = None
+) -> List[Experiment]:
+    """
+    Get experiments that failed (incomplete or with errors).
+    
+    Identifies experiments where:
+    - Refactoring started but not completed
+    - Tests failed after refactoring
+    - Neither phase completed
+    
+    Args:
+        session: Database session
+        strategy: Filter by prompting approach (optional)
+        model: Filter by AI model version (optional)
+    
+    Returns:
+        List of failed/incomplete experiments
+    """
+    query = session.query(Experiment)\
+        .filter(
+            (Experiment.refactor_phase_completed == False) |
+            (
+                (Experiment.refactor_phase_completed == True) &
+                (Experiment.execution_phase_completed == False) &
+                (Experiment.refactored_code.isnot(None))
+            )
+        )
+    
+    if strategy:
+        query = query.filter_by(prompting_approach=strategy)
+    
+    if model:
+        query = query.filter(Experiment.ai_model_version.like(f"%{model[:20]}%"))
+    
+    return query.all()
+
+
 def update_experiment(session: Session, experiment_id: int, **kwargs) -> Optional[Experiment]:
     """
     Update experiment fields.
@@ -665,6 +794,188 @@ def get_test_results(session: Session, experiment_id: int,
     if phase:
         query = query.filter_by(phase=phase)
     return query.all()
+
+
+def delete_test_results(session: Session, experiment_id: int, phase: Optional[str] = None) -> int:
+    """
+    Delete test results for an experiment.
+    
+    Used when re-executing experiments (--redo flag) to clean previous execution data.
+
+    Args:
+        session: Database session
+        experiment_id: Experiment ID
+        phase: Filter by phase ('before' or 'after'), optional. If None, deletes all phases.
+
+    Returns:
+        Number of deleted records
+    """
+    query = session.query(TestResult).filter_by(experiment_id=experiment_id)
+    if phase:
+        query = query.filter_by(phase=phase)
+    
+    count = query.count()
+    query.delete(synchronize_session=False)
+    session.flush()
+    return count
+
+
+def reset_experiment_execution_data(session: Session, experiment_id: int) -> None:
+    """
+    Reset execution phase data for an experiment.
+    
+    This function:
+    1. Deletes all test results
+    2. Resets analysis flags (smell detection, test analysis)
+    3. Resets execution_phase_completed flag
+    
+    Used when re-executing experiments (--redo flag) to start fresh.
+
+    Args:
+        session: Database session
+        experiment_id: Experiment ID
+    """
+    # Delete test results
+    delete_test_results(session, experiment_id)
+    
+    # Reset experiment flags
+    update_experiment(
+        session=session,
+        experiment_id=experiment_id,
+        execution_phase_completed=False,
+        tests_still_passing=None,
+        smell_removed=None,
+        introduced_new_smells=None,
+        coverage_decreased=None,
+        tests_changed=None,
+        tests_pass_rate_decreased=None
+    )
+    
+    session.flush()
+
+
+# =============================================================================
+# REPOSITORY BASELINE TEST RESULTS
+# =============================================================================
+
+def get_repository_baseline_tests(session: Session, repository_id: int) -> Optional['RepositoryBaselineTestResult']:
+    """
+    Get baseline test results for a repository.
+
+    Args:
+        session: Database session
+        repository_id: Repository ID
+
+    Returns:
+        RepositoryBaselineTestResult object or None if not found
+    """
+    from llm_refactor.modules.database.models import RepositoryBaselineTestResult
+    return session.query(RepositoryBaselineTestResult).filter_by(
+        repository_id=repository_id
+    ).first()
+
+
+def repository_has_baseline_tests(session: Session, repository_id: int) -> bool:
+    """
+    Check if a repository has baseline test results saved.
+
+    Args:
+        session: Database session
+        repository_id: Repository ID
+
+    Returns:
+        True if baseline exists, False otherwise
+    """
+    from llm_refactor.modules.database.models import RepositoryBaselineTestResult
+    return session.query(RepositoryBaselineTestResult).filter_by(
+        repository_id=repository_id
+    ).first() is not None
+
+
+def create_repository_baseline_tests(session: Session, repository_id: int,
+                                     test_suites_passed: Optional[int] = None,
+                                     test_suites_failed: Optional[int] = None,
+                                     test_suites_total: Optional[int] = None,
+                                     tests_passed: Optional[int] = None,
+                                     tests_failed: Optional[int] = None,
+                                     tests_total: Optional[int] = None,
+                                     snapshots_total: Optional[int] = None,
+                                     execution_time_seconds: Optional[float] = None,
+                                     coverage_statements: Optional[float] = None,
+                                     coverage_branches: Optional[float] = None,
+                                     coverage_functions: Optional[float] = None,
+                                     coverage_lines: Optional[float] = None,
+                                     all_tests_passed: Optional[bool] = None) -> 'RepositoryBaselineTestResult':
+    """
+    Create or update repository baseline test results.
+
+    If baseline already exists for this repository, it will be updated.
+    Otherwise, a new record is created.
+
+    Args:
+        session: Database session
+        repository_id: Repository ID
+        test_suites_passed: Number of test suites passed (optional)
+        test_suites_failed: Number of test suites failed (optional)
+        test_suites_total: Total test suites (optional)
+        tests_passed: Number of tests passed (optional)
+        tests_failed: Number of tests failed (optional)
+        tests_total: Total tests (optional)
+        snapshots_total: Total snapshots (optional)
+        execution_time_seconds: Execution time in seconds (optional)
+        coverage_statements: Statement coverage % (optional)
+        coverage_branches: Branch coverage % (optional)
+        coverage_functions: Function coverage % (optional)
+        coverage_lines: Line coverage % (optional)
+        all_tests_passed: Boolean flag (optional)
+
+    Returns:
+        RepositoryBaselineTestResult: Created or updated baseline test result object
+    """
+    from llm_refactor.modules.database.models import RepositoryBaselineTestResult
+    
+    # Check if baseline already exists
+    existing = get_repository_baseline_tests(session, repository_id)
+    
+    if existing:
+        # Update existing baseline
+        existing.test_suites_passed = test_suites_passed
+        existing.test_suites_failed = test_suites_failed
+        existing.test_suites_total = test_suites_total
+        existing.tests_passed = tests_passed
+        existing.tests_failed = tests_failed
+        existing.tests_total = tests_total
+        existing.snapshots_total = snapshots_total
+        existing.execution_time_seconds = execution_time_seconds
+        existing.coverage_statements = coverage_statements
+        existing.coverage_branches = coverage_branches
+        existing.coverage_functions = coverage_functions
+        existing.coverage_lines = coverage_lines
+        existing.all_tests_passed = all_tests_passed
+        existing.executed_at = datetime.utcnow()
+        session.flush()
+        return existing
+    else:
+        # Create new baseline
+        result = RepositoryBaselineTestResult(
+            repository_id=repository_id,
+            test_suites_passed=test_suites_passed,
+            test_suites_failed=test_suites_failed,
+            test_suites_total=test_suites_total,
+            tests_passed=tests_passed,
+            tests_failed=tests_failed,
+            tests_total=tests_total,
+            snapshots_total=snapshots_total,
+            execution_time_seconds=execution_time_seconds,
+            coverage_statements=coverage_statements,
+            coverage_branches=coverage_branches,
+            coverage_functions=coverage_functions,
+            coverage_lines=coverage_lines,
+            all_tests_passed=all_tests_passed
+        )
+        session.add(result)
+        session.flush()
+        return result
 
 
 # =============================================================================

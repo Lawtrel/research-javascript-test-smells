@@ -41,6 +41,7 @@ class Repository(Base):
 
     # Relationships
     files = relationship("File", back_populates="repository", cascade="all, delete-orphan")
+    baseline_test_results = relationship("RepositoryBaselineTestResult", back_populates="repository", cascade="all, delete-orphan")
 
     def __repr__(self):
         return f"<Repository(id={self.id}, name='{self.name}')>"
@@ -174,11 +175,18 @@ class Experiment(Base):
     introduced_new_smells = Column(Boolean, default=False)
     tests_still_passing = Column(Boolean)
     coverage_changed = Column(Boolean)  # Test coverage changed (baseline vs refactored)
+    coverage_decreased = Column(Boolean)  # Test coverage decreased (regression)
     tests_changed = Column(Boolean)  # Test execution results changed
+    tests_pass_rate_decreased = Column(Boolean)  # Test pass rate decreased (tests_passed/tests_total regression)
+    
+    # Phase Tracking (for two-phase experiment execution)
+    refactor_phase_completed = Column(Boolean, default=False)  # Phase 1: LLM refactoring complete
+    execution_phase_completed = Column(Boolean, default=False)  # Phase 2: Testing/detection complete
 
-    # Performance
-    execution_time_seconds = Column(Float)
-    tokens_used = Column(Integer)
+    # Performance Metrics
+    execution_time_seconds = Column(Float)  # Total experiment execution time
+    llm_latency_seconds = Column(Float)  # LLM API response time only
+    tokens_used = Column(Integer)  # Total tokens (prompt + completion)
 
     # Notes
     notes = Column(Text)
@@ -301,6 +309,44 @@ class TestResult(Base):
 
     def __repr__(self):
         return f"<TestResult(id={self.id}, exp_id={self.experiment_id}, phase='{self.phase}', passed={self.all_tests_passed})>"
+
+
+class RepositoryBaselineTestResult(Base):
+    """Repository-level baseline test results (before any refactoring)."""
+    __tablename__ = 'repository_baseline_test_results'
+    __table_args__ = (
+        UniqueConstraint('repository_id', name='uq_repo_baseline'),
+    )
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    repository_id = Column(Integer, ForeignKey('repositories.id', ondelete='CASCADE'), nullable=False)
+
+    # Test Execution
+    test_suites_passed = Column(Integer)
+    test_suites_failed = Column(Integer)
+    test_suites_total = Column(Integer)
+    tests_passed = Column(Integer)
+    tests_failed = Column(Integer)
+    tests_total = Column(Integer)
+    snapshots_total = Column(Integer)
+    execution_time_seconds = Column(Float)
+
+    # Coverage
+    coverage_statements = Column(Float)
+    coverage_branches = Column(Float)
+    coverage_functions = Column(Float)
+    coverage_lines = Column(Float)
+
+    # Status
+    all_tests_passed = Column(Boolean)
+
+    executed_at = Column(DateTime, default=datetime.utcnow)
+
+    # Relationships
+    repository = relationship("Repository", back_populates="baseline_test_results")
+
+    def __repr__(self):
+        return f"<RepositoryBaselineTestResult(id={self.id}, repo_id={self.repository_id}, passed={self.all_tests_passed})>"
 
 
 class AIResponse(Base):

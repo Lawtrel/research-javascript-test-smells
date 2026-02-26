@@ -25,8 +25,8 @@ export function useRefatoracoes() {
     ai_model_version: '',
     prompting_approach: '',
     smell_removed: '',
-    tests_changed: '',
     coverage_changed: '',
+    coverage_decreased: '',
   });
 
   const totalPages = Math.ceil(total / PAGE_SIZE);
@@ -42,8 +42,8 @@ export function useRefatoracoes() {
       if (currentFilters.ai_model_version) params.ai_model_version = currentFilters.ai_model_version;
       if (currentFilters.prompting_approach) params.prompting_approach = currentFilters.prompting_approach;
       if (currentFilters.smell_removed !== '') params.smell_removed = currentFilters.smell_removed;
-      if (currentFilters.tests_changed !== '') params.tests_changed = currentFilters.tests_changed;
       if (currentFilters.coverage_changed !== '') params.coverage_changed = currentFilters.coverage_changed;
+      if (currentFilters.coverage_decreased !== '') params.coverage_decreased = currentFilters.coverage_decreased;
 
       const data = await getRefatoracoes(params);
       setExperiments(data.experiments);
@@ -98,12 +98,16 @@ export function useRefatoracoes() {
       ai_model_version: '',
       prompting_approach: '',
       smell_removed: '',
-      tests_changed: '',
       coverage_changed: '',
+      coverage_decreased: '',
     });
     setPage(1);
     setSelectedExperiment(null);
   }, []);
+
+  const refreshExperiments = useCallback(async () => {
+    await loadExperiments(filters, page);
+  }, [filters, page, loadExperiments]);
 
   return {
     experiments,
@@ -123,5 +127,6 @@ export function useRefatoracoes() {
     updateFilters,
     clearFilters,
     setPage,
+    refreshExperiments,
   };
 }
