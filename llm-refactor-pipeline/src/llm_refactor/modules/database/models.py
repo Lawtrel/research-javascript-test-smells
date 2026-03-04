@@ -178,6 +178,8 @@ class Experiment(Base):
     coverage_decreased = Column(Boolean)  # Test coverage decreased (regression)
     tests_changed = Column(Boolean)  # Test execution results changed
     tests_pass_rate_decreased = Column(Boolean)  # Test pass rate decreased (tests_passed/tests_total regression)
+    tests_failed = Column(Integer)       # 0=ok, 1=tests introduced failures after refactoring
+    tests_failed_type = Column(String)   # 'suites_failed_increase', 'syntax_error', 'module_resolution_error'
     
     # Phase Tracking (for two-phase experiment execution)
     refactor_phase_completed = Column(Boolean, default=False)  # Phase 1: LLM refactoring complete
@@ -187,6 +189,9 @@ class Experiment(Base):
     execution_time_seconds = Column(Float)  # Total experiment execution time
     llm_latency_seconds = Column(Float)  # LLM API response time only
     tokens_used = Column(Integer)  # Total tokens (prompt + completion)
+
+    # Added smells: JSON dict {smell_type: count_added} for types where after > before
+    added_smells = Column(Text)  # e.g. '{"AssertionRoulette": 2, "EagerTest": 1}'
 
     # Notes
     notes = Column(Text)
@@ -289,6 +294,7 @@ class TestResult(Base):
     test_suites_total = Column(Integer)
     tests_passed = Column(Integer)
     tests_failed = Column(Integer)
+    tests_skipped = Column(Integer)
     tests_total = Column(Integer)
     snapshots_total = Column(Integer)
     execution_time_seconds = Column(Float)
