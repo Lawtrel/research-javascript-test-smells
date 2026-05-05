@@ -1,0 +1,17 @@
+{
+  "title": "Replication Package for: Evaluating Large Language Models for Automated Refactoring of JavaScript Test Smells",
+  "description": "Replication package containing the CLI pipeline, dataset, prompts, and analysis scripts for the automated refactoring of JavaScript test smells using LLMs.",
+  "upload_type": "software",
+  "creators": [
+    {
+      "name": "Sousa, Gabriel Amaral",
+      "affiliation": "Universidade Estadual de Feira de Santana (UEFS)"
+    },
+    {
+      "name": "Santos, Leandro Alves dos",
+      "affiliation": "Universidade do Estado da Bahia (UNEB)"
+    }
+  ],
+  "access_right": "open",
+  "license": "MIT"
+}
